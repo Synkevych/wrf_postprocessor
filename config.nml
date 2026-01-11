@@ -1,4 +1,4 @@
-&config_nml
+&io_nml
   infile  = "test.nc"  ! WRF input file
   grid_outfile = "grid.data"  ! grid file output
   pmsl_outfile = "pmsl_"  ! mean sea level pressure
