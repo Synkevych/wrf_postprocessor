@@ -34,11 +34,11 @@ program extract_wrf_fields
   real :: clc ! cloud cover flag (QCLOUD, QICE)
   integer :: i, j, k, t, 
   real :: temperature, psfc_temp
-  character(len=32) :: outfile
+  character(len=256) :: outfile
 
   ! Load configuration from namelist (if exists)
   call load_config()
-  
+
   print *, "Opening NetCDF file:", trim(wrf_infile)
 
   !------------------ open file ------------------
@@ -94,26 +94,31 @@ program extract_wrf_fields
      retval = nf90_get_var(ncid,vid_qi,qice,start=(/1,1,1,t/),count=(/nx,ny,nz,1/))
 
      write(outfile,"('pmsl_',I3.3,'.dat')") t
-     open(10,file=outfile,status="replace")
+     !write(outfile,'(A,I3.3,A)') trim(pmsl_outfile), t, '.dat'
+     open(10,file=trim(outfile),status="replace")
 
      write(10,'(A)') "#pmsl psfc u10 v10 t2 rh2 clc"
 
      do j=1,ny
        do i=1,nx
+         !=====psfc_temp calculation=====
          psfc_temp = psfc(i,j)
          tv = t2(i,j)*(1.0 + 0.61*q2(i,j))
+         !===== temperature calculation=====
          temperature = t2(i,j)-273.15_rk
+         !=====pmsl calculation=====
          pmsl = psfc_temp*exp(g*hgt(i,j)/(Rd*tv))
-
          es = 611.2*exp(17.67*(temperature)/(t2(i,j)-29.65))
          e  = q2(i,j)*psfc(i,j)/(0.622+0.378*q2(i,j))
          ! calculate relative humidity in %
+         !===== rh2 calculation=====
          ! rh2 = 100.0*e/es
          rh2 = rh_vs_q_p_and_t(real(q2(i,j), rk),&
                    real(t2(i,j), rk)-273.15_rk, &
                    real(psfc(i,j), rk))
 
          cloud_col(:) = real(cldfra4(i,j,1:nz,1), kind=8)
+        !===== clc calculation=====
          clc = real(total_cloud_cover(cloud_col, nz))
 
          do k=1,nz
@@ -130,12 +135,12 @@ program extract_wrf_fields
        end do
      end do
      close(10)
-
   end do
 
   retval = nf90_close(ncid)
   print *,"DONE"
 
+  call wrf_grid_export()
   ! -----------------------------------------------
 contains
 
@@ -171,4 +176,74 @@ contains
     cl_gh = 1.0_8 - prod2
 
   end function total_cloud_cover
+  ! -----------------------------------------------
+
+  subroutine wrf_grid_export
+    integer :: ncid, varid_lon, varid_lat
+    integer :: dimid_we, dimid_sn
+    integer :: nx, ny
+    integer :: retval
+
+    integer, dimension(3) :: start, count
+
+    real(kind=8), allocatable :: xlon(:,:), xlat(:,:)
+
+    integer :: i, j
+
+    call load_config()
+
+    print *, "Opening NetCDF file:", trim(wrf_infile)
+
+    retval = nf90_open(wrf_infile, NF90_NOWRITE, ncid)
+    print *, "wrf_infile", wrf_infile
+    print *, "ncid", ncid
+    if (retval /= nf90_noerr) then
+      print *, nf90_strerror(retval)
+      stop
+    endif
+
+    print *, "Reading dimensions..."
+
+    retval = nf90_inq_dimid(ncid, "west_east", dimid_we)
+    retval = nf90_inq_dimid(ncid, "south_north", dimid_sn)
+
+    retval = nf90_inquire_dimension(ncid, dimid_we, len=nx)
+    retval = nf90_inquire_dimension(ncid, dimid_sn, len=ny)
+
+    print *, "Grid size:", nx, "x", ny
+
+    allocate(xlon(nx, ny))
+    allocate(xlat(nx, ny))
+
+    retval = nf90_inq_varid(ncid, "XLONG", varid_lon)
+    retval = nf90_inq_varid(ncid, "XLAT",  varid_lat)
+
+    ! Read ONLY Time = 1
+    start = (/1, 1, 1/)
+    count = (/nx, ny, 1/)
+
+    print *, "Reading XLONG..."
+    retval = nf90_get_var(ncid, varid_lon, xlon, start=start, count=count)
+
+    print *, "Reading XLAT..."
+    retval = nf90_get_var(ncid, varid_lat, xlat, start=start, count=count)
+
+    retval = nf90_close(ncid)
+
+    print *, "Lon min/max:", minval(xlon), maxval(xlon)
+    print *, "Lat min/max:", minval(xlat), maxval(xlat)
+
+    open(unit=10, file=grid_outfile, status="replace")
+    write(10,'(A)') "# i j lon lat"
+
+    do j = 1, ny
+      do i = 1, nx
+          write(10,'(I6,1X,I6,1X,F12.6,1X,F12.6)') i, j, xlon(i,j), xlat(i,j)
+      end do
+    end do
+    close(10)
+
+    print *, "DONE"
+    end subroutine wrf_grid_export
+
 end program extract_wrf_fields
