@@ -1,4 +1,3 @@
-! gfortran extract_wrf_fields.f90 $(nf-config --fflags) $(nf-config --flibs) -o extract_wrf_fields
 program extract_wrf_fields
   use netcdf
   use rh_utils
@@ -32,7 +31,7 @@ program extract_wrf_fields
   real :: es ! saturation vapor pressure 
   real :: e  ! vapor pressure
   real :: clc ! cloud cover flag (QCLOUD, QICE)
-  integer :: i, j, k, t, 
+  integer :: i, j, k, t
   real :: temperature, psfc_temp
   character(len=256) :: outfile
 
@@ -148,7 +147,7 @@ contains
     implicit none
     integer, intent(in) :: n
     real(kind=8), intent(in)  :: cloudfra(n)
-    real(kind=8), intent(out) :: cl_rand, cl_gh, cl_max
+    real(kind=8) :: cl_rand, cl_gh, cl_max
 
     integer :: k
     real(kind=8) :: prod1, prod2
@@ -178,11 +177,14 @@ contains
   end function total_cloud_cover
   ! -----------------------------------------------
 
-  subroutine wrf_grid_export
+  subroutine wrf_grid_export()
+    use netcdf
+    use mod_config
+    implicit none
+
     integer :: ncid, varid_lon, varid_lat
     integer :: dimid_we, dimid_sn
-    integer :: nx, ny
-    integer :: retval
+    integer :: nx, ny, retval
 
     integer, dimension(3) :: start, count
 

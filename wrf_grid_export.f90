@@ -1,4 +1,3 @@
-! compile using: gfortran extract_wrf_grid.f90 $(nf-config --fflags) $(nf-config --flibs) -o extract_wrf_grid
 program wrf_grid_export
   use netcdf
   use mod_config
@@ -19,7 +18,7 @@ program wrf_grid_export
   !character(len=8), parameter :: outfile = "grid.dat"
   
   ! Load configuration from namelist (if exists)
-  call load_config()
+  call load_config("config.nml")
 
   print *, "Opening NetCDF file:", trim(wrf_infile)
 
