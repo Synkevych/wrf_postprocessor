@@ -2,6 +2,7 @@
 program extract_wrf_fields
   use netcdf
   use rh_utils
+  use mod_config
   implicit none
 
   !------------------ constants ------------------
@@ -35,8 +36,13 @@ program extract_wrf_fields
   real :: temperature, psfc_temp
   character(len=32) :: outfile
 
+  ! Load configuration from namelist (if exists)
+  call load_config()
+  
+  print *, "Opening NetCDF file:", trim(wrf_infile)
+
   !------------------ open file ------------------
-  retval = nf90_open("test.nc", NF90_NOWRITE, ncid)
+  retval = nf90_open(wrf_infile, NF90_NOWRITE, ncid)
   if (retval /= nf90_noerr) stop nf90_strerror(retval)
 
   !------------------ dimensions -----------------
