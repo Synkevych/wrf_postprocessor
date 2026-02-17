@@ -1,6 +1,6 @@
 &io_nml
-  infile  = "test.nc"  ! WRF input file
-  grid_outfile = "grid.data"  ! grid file output
-  pmsl_outfile = "pmsl_"  ! mean sea level pressure
-  ntimes1 = 28  ! number of time steps to process
+  infile  = "test.nc"
+  grid_outfile = "grid.data"
+  pmsl_outfile = "pmsl_"
+  ntimes1 = 28
 /
