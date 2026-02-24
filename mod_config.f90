@@ -3,7 +3,7 @@ module mod_config
   implicit none
 
   type :: config_type
-    character(len=512) :: infile = 'test.nc'
+    character(len=512) :: infile = 'examples/wrfout_d01_2025-10-22_12:00:00'
     character(len=512) :: grid_outfile = 'grid.dat'
     character(len=512) :: pmsl_outfile = 'pmsl_'
     integer(kind=4) :: ntimes1 = 28

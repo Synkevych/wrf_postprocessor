@@ -74,7 +74,7 @@ contains
     if (var_exists(ncid, 'PMSL')) then
       call read_2d_at_time(ncid, 'PMSL', nx, ny, tidx, pmsl)
     else
-      pmsl = psfc
+      call calc_pmsl_from_wrf(ncid, nx, ny, tidx, psfc, pmsl)
     end if
 
     deallocate(t2k, q2)
@@ -118,6 +118,175 @@ contains
 
     call apply_fillvalue_2d(ncid, varid, field, nx, ny)
   end subroutine read_2d_at_time
+
+  subroutine read_1d_at_time(ncid, varname, n1, tidx, field)
+    integer(kind=4), intent(in) :: ncid
+    character(len=*), intent(in) :: varname
+    integer(kind=4), intent(in) :: n1
+    integer(kind=4), intent(in) :: tidx
+    real(kind=8), intent(out) :: field(n1)
+
+    integer(kind=4) :: rc
+    integer(kind=4) :: varid
+    integer(kind=4) :: ndims
+    integer(kind=4) :: dimids(nf90_max_var_dims)
+    integer(kind=4) :: start1(1), count1(1)
+    integer(kind=4) :: start2(2), count2(2)
+
+    rc = nf90_inq_varid(ncid, trim(varname), varid)
+    call check_nc(rc, 'nf90_inq_varid('//trim(varname)//')')
+
+    rc = nf90_inquire_variable(ncid, varid, ndims=ndims, dimids=dimids)
+    call check_nc(rc, 'nf90_inquire_variable('//trim(varname)//')')
+
+    select case (ndims)
+    case (1)
+      start1 = (/1_4/)
+      count1 = (/n1/)
+      rc = nf90_get_var(ncid, varid, field, start=start1, count=count1)
+      call check_nc(rc, 'nf90_get_var('//trim(varname)//',1D)')
+    case (2)
+      start2 = (/1_4, tidx/)
+      count2 = (/n1, 1_4/)
+      rc = nf90_get_var(ncid, varid, field, start=start2, count=count2)
+      call check_nc(rc, 'nf90_get_var('//trim(varname)//',2D@t)')
+    case default
+      write(*,'(A,I0,A)') 'Unsupported rank for ', ndims, ': '//trim(varname)
+      stop 1
+    end select
+
+    call apply_fillvalue_1d(ncid, varid, field, n1)
+  end subroutine read_1d_at_time
+
+  subroutine read_3d_at_time(ncid, varname, nx, ny, nz, tidx, field)
+    integer(kind=4), intent(in) :: ncid
+    character(len=*), intent(in) :: varname
+    integer(kind=4), intent(in) :: nx, ny, nz
+    integer(kind=4), intent(in) :: tidx
+    real(kind=8), intent(out) :: field(nx, ny, nz)
+
+    integer(kind=4) :: rc
+    integer(kind=4) :: varid
+    integer(kind=4) :: ndims
+    integer(kind=4) :: dimids(nf90_max_var_dims)
+    integer(kind=4) :: start3(3), count3(3)
+    integer(kind=4) :: start4(4), count4(4)
+
+    rc = nf90_inq_varid(ncid, trim(varname), varid)
+    call check_nc(rc, 'nf90_inq_varid('//trim(varname)//')')
+
+    rc = nf90_inquire_variable(ncid, varid, ndims=ndims, dimids=dimids)
+    call check_nc(rc, 'nf90_inquire_variable('//trim(varname)//')')
+
+    select case (ndims)
+    case (3)
+      start3 = (/1_4, 1_4, 1_4/)
+      count3 = (/nx, ny, nz/)
+      rc = nf90_get_var(ncid, varid, field, start=start3, count=count3)
+      call check_nc(rc, 'nf90_get_var('//trim(varname)//',3D)')
+    case (4)
+      start4 = (/1_4, 1_4, 1_4, tidx/)
+      count4 = (/nx, ny, nz, 1_4/)
+      rc = nf90_get_var(ncid, varid, field, start=start4, count=count4)
+      call check_nc(rc, 'nf90_get_var('//trim(varname)//',4D@t)')
+    case default
+      write(*,'(A,I0,A)') 'Unsupported rank for ', ndims, ': '//trim(varname)
+      stop 1
+    end select
+
+    call apply_fillvalue_3d(ncid, varid, field, nx, ny, nz)
+  end subroutine read_3d_at_time
+
+  subroutine calc_pmsl_from_wrf(ncid, nx, ny, tidx, psfc, pmsl)
+    integer(kind=4), intent(in) :: ncid
+    integer(kind=4), intent(in) :: nx, ny
+    integer(kind=4), intent(in) :: tidx
+    real(kind=8), intent(in) :: psfc(nx, ny)
+    real(kind=8), intent(out) :: pmsl(nx, ny)
+
+    integer(kind=4) :: rc
+    integer(kind=4) :: varid
+    integer(kind=4) :: ndims
+    integer(kind=4) :: dimids(nf90_max_var_dims)
+    integer(kind=4) :: nz
+    integer(kind=4) :: dimlen
+    real(kind=8), allocatable :: znu(:)
+    real(kind=8), allocatable :: p(:, :, :), pb(:, :, :), tpot(:, :, :), hgt(:, :)
+
+    rc = nf90_inq_varid(ncid, 'T', varid)
+    call check_nc(rc, 'nf90_inq_varid(T)')
+    rc = nf90_inquire_variable(ncid, varid, ndims=ndims, dimids=dimids)
+    call check_nc(rc, 'nf90_inquire_variable(T)')
+    if (ndims /= 4) then
+      write(*,'(A,I0)') 'T must have rank 4, got ', ndims
+      stop 1
+    end if
+    rc = nf90_inquire_dimension(ncid, dimids(3), len=dimlen)
+    call check_nc(rc, 'nf90_inquire_dimension(bottom_top from T)')
+    nz = dimlen
+
+    allocate(znu(nz))
+    allocate(p(nx, ny, nz), pb(nx, ny, nz), tpot(nx, ny, nz), hgt(nx, ny))
+
+    call read_1d_at_time(ncid, 'ZNU', nz, 1_4, znu)
+    call read_3d_at_time(ncid, 'P', nx, ny, nz, tidx, p)
+    call read_3d_at_time(ncid, 'PB', nx, ny, nz, tidx, pb)
+    call read_3d_at_time(ncid, 'T', nx, ny, nz, tidx, tpot)
+    call read_2d_at_time(ncid, 'HGT', nx, ny, tidx, hgt)
+
+    tpot = tpot + 300.0_8
+    call calcpslv(nx, ny, nz, znu, p, pb, tpot, hgt, psfc, pmsl)
+
+    deallocate(znu, p, pb, tpot, hgt)
+  end subroutine calc_pmsl_from_wrf
+
+  subroutine calcpslv(nx, ny, nz, znu, p, pb, tpot, hgt, psfc, pslv)
+    integer(kind=4), intent(in) :: nx, ny, nz
+    real(kind=8), intent(in) :: znu(nz)
+    real(kind=8), intent(in) :: p(nx, ny, nz), pb(nx, ny, nz), tpot(nx, ny, nz)
+    real(kind=8), intent(in) :: hgt(nx, ny), psfc(nx, ny)
+    real(kind=8), intent(out) :: pslv(nx, ny)
+
+    real(kind=8), parameter :: ra = 287.05_8
+    real(kind=8), parameter :: cpa = 1005.0_8
+    real(kind=8), parameter :: pt = 5000.0_8
+    real(kind=8), parameter :: lapse = 0.0065_8
+    real(kind=8), parameter :: grav = 9.81_8
+
+    integer(kind=4) :: i, j, k, k0
+    real(kind=8) :: ps, pbhydr, p0, t0, ts, tm, z, tslv
+    logical :: found_k
+
+    do j = 1, ny
+      do i = 1, nx
+        ps = psfc(i, j)
+        pbhydr = pb(i, j, 1)
+        k0 = 1
+        found_k = .false.
+
+        do k = 1, nz - 1
+          if ((ps - p(i, j, k) - pb(i, j, k) < 10000.0_8) .and. &
+              (ps - p(i, j, k + 1) - pb(i, j, k + 1) >= 10000.0_8)) then
+            k0 = k
+            found_k = .true.
+            exit
+          end if
+        end do
+
+        if (.not. found_k) then
+          pslv(i, j) = ieee_value(0.0_8, ieee_quiet_nan)
+        else
+          p0 = znu(k0) * (pbhydr - pt) + pt + 0.5_8 * (p(i, j, k0) + p(i, j, k0 + 1))
+          t0 = tpot(i, j, k0) / ( (100000.0_8 / p0) ** (ra / cpa) )
+          ts = t0 * ( (ps / p0) ** (ra * lapse / grav) )
+          tm = 0.5_8 * (ts + t0)
+          z = hgt(i, j) - (ra / grav) * log(p0 / ps) * tm
+          tslv = t0 + lapse * z
+          pslv(i, j) = ps * exp(grav * hgt(i, j) / ra / (0.5_8 * (tslv + ts)))
+        end if
+      end do
+    end do
+  end subroutine calcpslv
 
   subroutine read_cldfra_max_at_time(ncid, nx, ny, tidx, clc_max)
     integer(kind=4), intent(in) :: ncid
@@ -189,7 +358,7 @@ contains
     real(kind=8), parameter :: eps = 0.622_8
     real(kind=8) :: es
     real(kind=8) :: e
-    real(kind=8) :: q
+    real(kind=8) :: r
     integer(kind=4) :: i, j
 
     do j = 1, ny
@@ -197,12 +366,13 @@ contains
         if (ieee_is_nan(q2(i, j)) .or. ieee_is_nan(t2k(i, j)) .or. ieee_is_nan(psfc(i, j))) then
           rh2(i, j) = ieee_value(0.0_8, ieee_quiet_nan)
         else
-          q = q2(i, j)
+          r = q2(i, j)
           es = esonT(t2k(i, j))
           if (psfc(i, j) <= 0.0_8 .or. es <= 0.0_8) then
             rh2(i, j) = ieee_value(0.0_8, ieee_quiet_nan)
           else
-            e = q * psfc(i, j) / (eps + (1.0_8 - eps) * q)
+            ! WRF Q2 is handled as mixing ratio (kg/kg dry air) to match MATLAB output behavior.
+            e = r * psfc(i, j) / (eps + r)
             rh2(i, j) = 100.0_8 * e / es
           end if
         end if
@@ -243,6 +413,52 @@ contains
       end do
     end do
   end subroutine apply_fillvalue_2d
+
+  subroutine apply_fillvalue_1d(ncid, varid, a, n1)
+    integer(kind=4), intent(in) :: ncid, varid
+    integer(kind=4), intent(in) :: n1
+    real(kind=8), intent(inout) :: a(n1)
+
+    integer(kind=4) :: rc
+    integer(kind=4) :: i
+    real(kind=8) :: fill
+    real(kind=8) :: tol
+
+    rc = nf90_get_att(ncid, varid, '_FillValue', fill)
+    if (rc /= nf90_noerr) return
+
+    tol = max(1.0d-12, abs(fill) * 1.0d-10)
+    do i = 1, n1
+      if (abs(a(i) - fill) <= tol) then
+        a(i) = ieee_value(0.0_8, ieee_quiet_nan)
+      end if
+    end do
+  end subroutine apply_fillvalue_1d
+
+  subroutine apply_fillvalue_3d(ncid, varid, a, nx, ny, nz)
+    integer(kind=4), intent(in) :: ncid, varid
+    integer(kind=4), intent(in) :: nx, ny, nz
+    real(kind=8), intent(inout) :: a(nx, ny, nz)
+
+    integer(kind=4) :: rc
+    integer(kind=4) :: i, j, k
+    real(kind=8) :: fill
+    real(kind=8) :: tol
+
+    rc = nf90_get_att(ncid, varid, '_FillValue', fill)
+    if (rc /= nf90_noerr) return
+
+    tol = max(1.0d-12, abs(fill) * 1.0d-10)
+    do k = 1, nz
+      do j = 1, ny
+        do i = 1, nx
+          if (abs(a(i, j, k) - fill) <= tol) then
+            a(i, j, k) = ieee_value(0.0_8, ieee_quiet_nan)
+          end if
+        end do
+      end do
+    end do
+  end subroutine apply_fillvalue_3d
 
   subroutine apply_fillvalue_4d_single_t(ncid, varid, a, nx, ny, nz)
     integer(kind=4), intent(in) :: ncid, varid
