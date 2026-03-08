@@ -1,6 +1,6 @@
 &io_nml
-  infile  = "test.nc"
-  grid_outfile = "grid.data"
+  infile  = "input/test.nc"
+  grid_outfile = "output/grid.data"
   pmsl_outfile = "pmsl_"
   ntimes1 = 28
 /
